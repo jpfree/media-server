@@ -445,6 +445,14 @@ void MsGbSource::PsParseThread() {
 		goto end;
 	}
 
+	if (m_video->duration == 0 || m_video->duration == AV_NOPTS_VALUE) {
+		int64_t st = stoll(m_ctx->startTime);
+		int64_t et = stoll(m_ctx->endTime);
+		if (et > st) {
+			m_video->duration = (et - st) * m_video->time_base.den / m_video->time_base.num;
+		}
+	}
+
 	ret = av_find_best_stream(fmt_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
 	if (ret >= 0) {
 		if (fmt_ctx->streams[ret]->codecpar->codec_id == AV_CODEC_ID_AAC ||
