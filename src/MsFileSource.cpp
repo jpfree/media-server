@@ -56,6 +56,12 @@ void MsFileSource::OnRun() {
 		return;
 	}
 
+	// log file duration
+	double duration_sec = fmt_ctx->duration / (double)AV_TIME_BASE;
+	double duration_stm = m_video->duration * av_q2d(m_video->time_base);
+	MS_LOG_DEBUG("file:%s duration:%.2f video duration:%.2f", m_filename.c_str(), duration_sec,
+	             duration_stm);
+
 	ret = av_find_best_stream(fmt_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
 	if (ret >= 0) {
 		if (fmt_ctx->streams[ret]->codecpar->codec_id == AV_CODEC_ID_AAC ||

@@ -109,6 +109,11 @@ void MsHttpSink::OnStreamInfo(AVStream *video, int videoIdx, AVStream *audio, in
 	}
 	m_outVideo->codecpar->codec_tag = 0;
 
+	if (m_video->duration > 0) {
+		m_fmtCtx->duration =
+		    static_cast<int64_t>(m_video->duration * av_q2d(m_video->time_base) * AV_TIME_BASE);
+	}
+
 	if (m_audio) {
 		m_outAudio = avformat_new_stream(m_fmtCtx, NULL);
 		ret = avcodec_parameters_copy(m_outAudio->codecpar, m_audio->codecpar);
