@@ -289,7 +289,8 @@ void MsRtcServer::WhipProcess(shared_ptr<SHttpTransferMsg> rtcMsg) {
 				}
 
 				if (rtpMap->format == "OPUS" || rtpMap->format == "opus" ||
-				    rtpMap->format == "H264" || rtpMap->format == "H265") {
+				    rtpMap->format == "H264" || rtpMap->format == "H265" ||
+				    rtpMap->format == "AV1") {
 					mediaFound = true;
 
 					MS_LOG_INFO("pc:%s %s track format:%s payload:%d", sessionId.c_str(),

@@ -191,12 +191,15 @@ int MsRtcSink::CreateTracksAndAnswer() {
 					audioDesc.addSSRC(ssrc, pMedia->getCNameForSsrc(ssrc));
 				}
 				_audioTrack = _pc->addTrack(std::move(audioDesc));
-			} else if ((rtpMap->format == "H264" || rtpMap->format == "H265") && !_videoTrack) {
+			} else if ((rtpMap->format == "H264" || rtpMap->format == "H265" ||
+			            rtpMap->format == "AV1") &&
+			           !_videoTrack) {
 				MS_LOG_INFO("whep:%s setup video track, codec: %s, pt: %d", _sessionId.c_str(),
 				            rtpMap->format.c_str(), pt);
-				bool isH264 = (rtpMap->format == "H264");
-				if ((isH264 && m_video->codecpar->codec_id == AV_CODEC_ID_H264) ||
-				    (!isH264 && m_video->codecpar->codec_id == AV_CODEC_ID_H265)) {
+
+				if ((rtpMap->format == "H264" && m_video->codecpar->codec_id == AV_CODEC_ID_H264) ||
+				    (rtpMap->format == "H265" && m_video->codecpar->codec_id == AV_CODEC_ID_H265) ||
+				    (rtpMap->format == "AV1" && m_video->codecpar->codec_id == AV_CODEC_ID_AV1)) {
 					_videoPt = pt;
 					_videoCodec = rtpMap->format;
 
@@ -245,10 +248,12 @@ int MsRtcSink::CreateTracksAndAnswer() {
 					}
 
 					rtc::Description::Video videoDesc(pMedia->mid());
-					if (isH264) {
+					if (rtpMap->format == "H264") {
 						videoDesc.addH264Codec(pt);
-					} else {
+					} else if (rtpMap->format == "H265") {
 						videoDesc.addH265Codec(pt);
+					} else if (rtpMap->format == "AV1") {
+						videoDesc.addAV1Codec(pt);
 					}
 					auto ssrcs = pMedia->getSSRCs();
 					for (auto ssrc : ssrcs) {

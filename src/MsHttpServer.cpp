@@ -301,7 +301,8 @@ void MsHttpServer::FileUpload(shared_ptr<MsEvent> evt, MsHttpMsg &msg, char *bod
 
 	for (unsigned int i = 0; i < fmt_ctx->nb_streams; i++) {
 		if (fmt_ctx->streams[i]->codecpar->codec_id == AV_CODEC_ID_H264 ||
-		    fmt_ctx->streams[i]->codecpar->codec_id == AV_CODEC_ID_HEVC) {
+		    fmt_ctx->streams[i]->codecpar->codec_id == AV_CODEC_ID_HEVC ||
+		    fmt_ctx->streams[i]->codecpar->codec_id == AV_CODEC_ID_AV1) {
 			codec = avcodec_get_name(fmt_ctx->streams[i]->codecpar->codec_id);
 			if (fmt_ctx->streams[i]->avg_frame_rate.den != 0) {
 				frame_rate = av_q2d(fmt_ctx->streams[i]->avg_frame_rate);

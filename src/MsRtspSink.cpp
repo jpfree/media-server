@@ -223,13 +223,6 @@ int MsRtspServer::HandleDescribe(MsRtspMsg &msg, shared_ptr<MsEvent> evt) {
 		// check media source exists
 		auto source =
 		    MsResManager::GetInstance().GetOrCreateMediaSource(s[1], streamID, filename, sink);
-		if (source) {
-			MS_LOG_WARN("vod source already exists for stream: %s", streamID.c_str());
-			rsp.m_status = "403";
-			rsp.m_reason = "Forbidden";
-			SendRtspMsg(rsp, evt->GetSocket());
-			return -1;
-		}
 
 		if (!source) {
 			MS_LOG_WARN("create VOD source failed for stream: %s", streamID.c_str());
@@ -260,13 +253,6 @@ int MsRtspServer::HandleDescribe(MsRtspMsg &msg, shared_ptr<MsEvent> evt) {
 		// check media source exists
 		auto source =
 		    MsResManager::GetInstance().GetOrCreateMediaSource(s[1], streamID, streamInfo, sink);
-		if (source) {
-			MS_LOG_WARN("gbvod source already exists for stream: %s", streamID.c_str());
-			rsp.m_status = "403";
-			rsp.m_reason = "Forbidden";
-			SendRtspMsg(rsp, evt->GetSocket());
-			return -1;
-		}
 
 		if (!source) {
 			MS_LOG_WARN("create GBVOD source failed for stream: %s", streamID.c_str());
