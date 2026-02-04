@@ -440,6 +440,9 @@ void MsRtspSink::OnStreamInfo(AVStream *video, int videoIdx, AVStream *audio, in
 	m_outVideo->codecpar->codec_tag = 0;
 
 	av_dict_set(&opts, "rtpflags", "skip_rtcp", 0);
+	if (m_outVideo->codecpar->codec_id == AV_CODEC_ID_AV1) {
+		av_dict_set(&opts, "strict", "experimental", 0);
+	}
 	ret = avformat_write_header(m_fmtCtx, &opts);
 	av_dict_free(&opts);
 	if (ret < 0) {
