@@ -191,76 +191,80 @@ int MsRtcSink::CreateTracksAndAnswer() {
 					audioDesc.addSSRC(ssrc, pMedia->getCNameForSsrc(ssrc));
 				}
 				_audioTrack = _pc->addTrack(std::move(audioDesc));
-			} else if ((rtpMap->format == "H264" || rtpMap->format == "H265" ||
-			            rtpMap->format == "AV1") &&
-			           !_videoTrack) {
+			} else if (IsVideoMatch(rtpMap->format, m_video->codecpar->codec_id) && !_videoTrack) {
 				MS_LOG_INFO("whep:%s setup video track, codec: %s, pt: %d", _sessionId.c_str(),
 				            rtpMap->format.c_str(), pt);
 
-				if ((rtpMap->format == "H264" && m_video->codecpar->codec_id == AV_CODEC_ID_H264) ||
-				    (rtpMap->format == "H265" && m_video->codecpar->codec_id == AV_CODEC_ID_H265) ||
-				    (rtpMap->format == "AV1" && m_video->codecpar->codec_id == AV_CODEC_ID_AV1)) {
-					_videoPt = pt;
-					_videoCodec = rtpMap->format;
+				_videoPt = pt;
+				_videoCodec = rtpMap->format;
 
-					int buf_size = 2048;
-					int ret;
-					AVDictionary *opts = nullptr;
-					char ptStr[8];
+				int buf_size = 2048;
+				int ret;
+				AVDictionary *opts = nullptr;
+				char ptStr[8];
 
-					// Setup video RTP muxer
-					m_videoPb = avio_alloc_context(
-					    static_cast<unsigned char *>(av_malloc(buf_size)), buf_size, 1, this,
-					    nullptr,
-					    [](void *opaque, IO_WRITE_BUF_TYPE *buf, int buf_size) -> int {
-						    MsRtcSink *sink = static_cast<MsRtcSink *>(opaque);
-						    return sink->WriteBuffer(buf, buf_size, 1);
-					    },
-					    nullptr);
-					m_videoPb->max_packet_size = 1200; // MTU for WebRTC
+				// Setup video RTP muxer
+				m_videoPb = avio_alloc_context(
+				    static_cast<unsigned char *>(av_malloc(buf_size)), buf_size, 1, this, nullptr,
+				    [](void *opaque, IO_WRITE_BUF_TYPE *buf, int buf_size) -> int {
+					    MsRtcSink *sink = static_cast<MsRtcSink *>(opaque);
+					    return sink->WriteBuffer(buf, buf_size, 1);
+				    },
+				    nullptr);
+				m_videoPb->max_packet_size = 1200; // MTU for WebRTC
 
-					avformat_alloc_output_context2(&m_videoFmtCtx, nullptr, "rtp", nullptr);
-					if (!m_videoFmtCtx || !m_videoPb) {
-						MS_LOG_ERROR("Failed to allocate video format context or IO context");
-						return -1;
-					}
-
-					m_videoFmtCtx->pb = m_videoPb;
-					m_videoFmtCtx->flags |= AVFMT_FLAG_CUSTOM_IO;
-
-					m_outVideo = avformat_new_stream(m_videoFmtCtx, NULL);
-					ret = avcodec_parameters_copy(m_outVideo->codecpar, m_video->codecpar);
-					if (ret < 0) {
-						MS_LOG_ERROR("Failed to copy video codec parameters");
-						return -1;
-					}
-					m_outVideo->codecpar->codec_tag = 0;
-
-					// Set RTP payload type for video
-					snprintf(ptStr, sizeof(ptStr), "%d", _videoPt);
-					av_dict_set(&opts, "payload_type", ptStr, 0);
-					av_dict_set(&opts, "rtpflags", "skip_rtcp", 0);
-					ret = avformat_write_header(m_videoFmtCtx, &opts);
-					av_dict_free(&opts);
-					if (ret < 0) {
-						MS_LOG_ERROR("Error writing video RTP header");
-						return -1;
-					}
-
-					rtc::Description::Video videoDesc(pMedia->mid());
-					if (rtpMap->format == "H264") {
-						videoDesc.addH264Codec(pt);
-					} else if (rtpMap->format == "H265") {
-						videoDesc.addH265Codec(pt);
-					} else if (rtpMap->format == "AV1") {
-						videoDesc.addAV1Codec(pt);
-					}
-					auto ssrcs = pMedia->getSSRCs();
-					for (auto ssrc : ssrcs) {
-						videoDesc.addSSRC(ssrc, pMedia->getCNameForSsrc(ssrc));
-					}
-					_videoTrack = _pc->addTrack(std::move(videoDesc));
+				avformat_alloc_output_context2(&m_videoFmtCtx, nullptr, "rtp", nullptr);
+				if (!m_videoFmtCtx || !m_videoPb) {
+					MS_LOG_ERROR("Failed to allocate video format context or IO context");
+					return -1;
 				}
+
+				m_videoFmtCtx->pb = m_videoPb;
+				m_videoFmtCtx->flags |= AVFMT_FLAG_CUSTOM_IO;
+
+				m_outVideo = avformat_new_stream(m_videoFmtCtx, NULL);
+				ret = avcodec_parameters_copy(m_outVideo->codecpar, m_video->codecpar);
+				if (ret < 0) {
+					MS_LOG_ERROR("Failed to copy video codec parameters");
+					return -1;
+				}
+				m_outVideo->codecpar->codec_tag = 0;
+
+				// Set RTP payload type for video
+				snprintf(ptStr, sizeof(ptStr), "%d", _videoPt);
+				av_dict_set(&opts, "payload_type", ptStr, 0);
+				av_dict_set(&opts, "rtpflags", "skip_rtcp", 0);
+
+				if (_videoCodec == "VP9" || _videoCodec == "AV1") {
+					av_dict_set(&opts, "strict", "experimental", 0);
+				}
+
+				ret = avformat_write_header(m_videoFmtCtx, &opts);
+				av_dict_free(&opts);
+				if (ret < 0) {
+					MS_LOG_ERROR("Error writing video RTP header");
+					return -1;
+				}
+
+				rtc::Description::Video videoDesc(pMedia->mid());
+
+				if (rtpMap->format == "H264") {
+					videoDesc.addH264Codec(pt);
+				} else if (rtpMap->format == "H265") {
+					videoDesc.addH265Codec(pt);
+				} else if (rtpMap->format == "AV1") {
+					videoDesc.addAV1Codec(pt);
+				} else if (rtpMap->format == "VP8") {
+					videoDesc.addVP8Codec(pt);
+				} else if (rtpMap->format == "VP9") {
+					videoDesc.addVP9Codec(pt);
+				}
+
+				auto ssrcs = pMedia->getSSRCs();
+				for (auto ssrc : ssrcs) {
+					videoDesc.addSSRC(ssrc, pMedia->getCNameForSsrc(ssrc));
+				}
+				_videoTrack = _pc->addTrack(std::move(videoDesc));
 			}
 		}
 	}
@@ -617,6 +621,14 @@ void MsRtcSink::TranscodeAAC(AVPacket *pkt, std::vector<AVPacket *> &opusPkts) {
 	}
 
 	av_frame_unref(m_decodedFrame);
+}
+
+bool MsRtcSink::IsVideoMatch(const string &codec, AVCodecID codec_id) {
+	if ((codec == "H264" && codec_id == AV_CODEC_ID_H264) ||
+	    (codec == "H265" && codec_id == AV_CODEC_ID_H265)) {
+		return true;
+	}
+	return false;
 }
 
 void MsRtcSink::ReleaseTranscoder() {

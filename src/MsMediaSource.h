@@ -33,6 +33,7 @@ public:
 	virtual void OnSinksEmpty();
 	virtual void Work() = 0;
 	virtual shared_ptr<MsMediaSource> GetSharedPtr() = 0;
+	static bool IsSupportedCodec(AVCodecID codec_id);
 
 protected:
 	std::atomic_bool m_isClosing{false};

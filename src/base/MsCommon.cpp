@@ -541,3 +541,11 @@ void GetParam(const char *key, string &value, const string &uri) {
 
 	value.assign(p, p2 - p);
 }
+
+void GetParamInt(const char *key, int &value, const string &uri) {
+	string strVal;
+	GetParam(key, strVal, uri);
+	if (!strVal.empty()) {
+		value = stoi(strVal);
+	}
+}

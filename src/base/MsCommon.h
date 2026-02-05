@@ -90,5 +90,6 @@ void CvtToHex(unsigned char *in, unsigned char *out);
 void SleepMs(int ms);
 vector<string> SplitString(const string &input, const string &delimiter);
 void GetParam(const char *key, string &value, const string &uri);
+void GetParamInt(const char *key, int &value, const string &uri);
 
 #endif // MS_COMMON_H

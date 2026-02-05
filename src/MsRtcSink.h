@@ -58,6 +58,7 @@ private:
 	void ReleaseTranscoder();
 	void ProcessPkt(AVPacket *pkt);
 	void TranscodeAAC(AVPacket *pkt, std::vector<AVPacket *> &opusPkts);
+	bool IsVideoMatch(const string &codec, AVCodecID codec_id);
 
 	bool m_streamReady = false;
 	bool m_error = false;

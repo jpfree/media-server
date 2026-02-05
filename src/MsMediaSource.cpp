@@ -88,3 +88,10 @@ void MsMediaSource::SourceActiveClose() {
 }
 
 void MsMediaSource::OnSinksEmpty() { m_isClosing.store(true); }
+
+bool MsMediaSource::IsSupportedCodec(AVCodecID codec_id) {
+	return codec_id == AV_CODEC_ID_H264 || codec_id == AV_CODEC_ID_HEVC ||
+	       codec_id == AV_CODEC_ID_AV1 || codec_id == AV_CODEC_ID_AAC ||
+	       codec_id == AV_CODEC_ID_VP8 || codec_id == AV_CODEC_ID_VP9 ||
+	       codec_id == AV_CODEC_ID_OPUS;
+}

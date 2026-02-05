@@ -20,6 +20,7 @@ private:
 	void RtcProcess(shared_ptr<SHttpTransferMsg> rtcMsg);
 	void WhipProcess(shared_ptr<SHttpTransferMsg> rtcMsg);
 	void WhepProcess(shared_ptr<SHttpTransferMsg> rtcMsg);
+	bool IsSupportedCodec(const string &codec);
 
 	std::mutex m_mtx;
 	std::map<string, shared_ptr<MsRtcSource>> m_pcMap;     // WHIP sessions (ingest)

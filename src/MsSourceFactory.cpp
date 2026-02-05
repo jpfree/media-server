@@ -11,7 +11,15 @@ static int m_seqID = 1;
 static std::mutex m_mutex;
 
 std::shared_ptr<MsMediaSource> MsSourceFactory::CreateLiveSource(const std::string &streamID) {
-	auto device = MsDevMgr::Instance()->FindDevice(streamID);
+	auto parts = SplitString(streamID, "-");
+	string deviceId = streamID;
+	int streamNumber = 0;
+	if (parts.size() == 2) {
+		streamNumber = std::stoi(parts[1]);
+		deviceId = parts[0];
+	}
+
+	auto device = MsDevMgr::Instance()->FindDevice(deviceId);
 	if (!device) {
 		// if streamID ends with _jt, it is a JT source
 		if (streamID.size() > 3 && streamID.substr(streamID.size() - 3) == "_jt") {
@@ -39,6 +47,7 @@ std::shared_ptr<MsMediaSource> MsSourceFactory::CreateLiveSource(const std::stri
 		ctx->type = 0;
 		ctx->startTime = "0";
 		ctx->endTime = "0";
+		ctx->streamNumber = streamNumber;
 
 		std::lock_guard<std::mutex> lk(m_mutex);
 		return std::make_shared<MsGbSource>(streamID, ctx, m_seqID++);

@@ -59,6 +59,7 @@ struct SGbContext {
 	int rtpPort;
 	int transport;
 	int type;
+	int streamNumber = 0; // 0-main, 1-sub
 	string startTime;
 	string endTime;
 };

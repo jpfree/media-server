@@ -288,9 +288,7 @@ void MsRtcServer::WhipProcess(shared_ptr<SHttpTransferMsg> rtcMsg) {
 					continue;
 				}
 
-				if (rtpMap->format == "OPUS" || rtpMap->format == "opus" ||
-				    rtpMap->format == "H264" || rtpMap->format == "H265" ||
-				    rtpMap->format == "AV1") {
+				if (IsSupportedCodec(rtpMap->format)) {
 					mediaFound = true;
 
 					MS_LOG_INFO("pc:%s %s track format:%s payload:%d", sessionId.c_str(),
@@ -566,4 +564,8 @@ void MsRtcServer::WhepProcess(shared_ptr<SHttpTransferMsg> rtcMsg) {
 
 		SendHttpRspEx(sock.get(), rsp);
 	}
+}
+
+bool MsRtcServer::IsSupportedCodec(const string &codec) {
+	return (codec == "OPUS" || codec == "opus" || codec == "H264" || codec == "H265");
 }

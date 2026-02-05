@@ -4,6 +4,7 @@
 #include "MsDevMgr.h"
 #include "MsHttpHandler.h"
 #include "MsLog.h"
+#include "MsMediaSource.h"
 #include <fstream>
 #include <thread>
 
@@ -300,9 +301,8 @@ void MsHttpServer::FileUpload(shared_ptr<MsEvent> evt, MsHttpMsg &msg, char *bod
 	double frame_rate = 0.0;
 
 	for (unsigned int i = 0; i < fmt_ctx->nb_streams; i++) {
-		if (fmt_ctx->streams[i]->codecpar->codec_id == AV_CODEC_ID_H264 ||
-		    fmt_ctx->streams[i]->codecpar->codec_id == AV_CODEC_ID_HEVC ||
-		    fmt_ctx->streams[i]->codecpar->codec_id == AV_CODEC_ID_AV1) {
+		if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+		    MsMediaSource::IsSupportedCodec(fmt_ctx->streams[i]->codecpar->codec_id)) {
 			codec = avcodec_get_name(fmt_ctx->streams[i]->codecpar->codec_id);
 			if (fmt_ctx->streams[i]->avg_frame_rate.den != 0) {
 				frame_rate = av_q2d(fmt_ctx->streams[i]->avg_frame_rate);
@@ -461,14 +461,10 @@ void MsHttpServer::FileProcess(shared_ptr<MsEvent> evt, MsHttpMsg &msg, char *bo
 void MsHttpServer::FileUrl(shared_ptr<MsEvent> evt, MsHttpMsg &msg, char *body, int len) {
 	// get file id from uri param
 	json rsp, r;
-	string fileIdStr, netTypeStr;
+	string fileIdStr;
 	int nNetType = 0; // default use ip
 	GetParam("fileId", fileIdStr, msg.m_uri);
-	GetParam("netType", netTypeStr, msg.m_uri);
-
-	if (!netTypeStr.empty()) {
-		nNetType = std::stoi(netTypeStr);
-	}
+	GetParamInt("netType", nNetType, msg.m_uri);
 
 	if (fileIdStr.empty()) {
 		rsp["code"] = 1;
@@ -987,14 +983,13 @@ void MsHttpServer::SetSysConfig(shared_ptr<MsEvent> evt, MsHttpMsg &msg, char *b
 
 void MsHttpServer::GetLiveUrl(shared_ptr<MsEvent> evt, MsHttpMsg &msg, char *body, int len) {
 	json jRsp;
+	string deviceId;
 	int nNetType = 0;
-	string deviceId, netType;
-	GetParam("deviceId", deviceId, msg.m_uri);
-	GetParam("netType", netType, msg.m_uri);
+	int streamNum = 0;
 
-	if (netType.size()) {
-		nNetType = atoi(netType.c_str());
-	}
+	GetParam("deviceId", deviceId, msg.m_uri);
+	GetParamInt("netType", nNetType, msg.m_uri);
+	GetParamInt("streamNum", streamNum, msg.m_uri);
 
 	if (deviceId.size() == 0) {
 		try {
@@ -1040,6 +1035,10 @@ void MsHttpServer::GetLiveUrl(shared_ptr<MsEvent> evt, MsHttpMsg &msg, char *bod
 #else
 	string protocol = "http";
 #endif
+
+	if (streamNum > 0) {
+		deviceId = deviceId + "-" + std::to_string(streamNum);
+	}
 
 	sprintf(bb, "rtsp://%s:%d/live/%s", ip.c_str(), mn->httpPort, deviceId.c_str());
 	r["rtspUrl"] = bb;

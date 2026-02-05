@@ -61,9 +61,7 @@ void MsRtspSource::OnRun() {
 
 	m_videoIdx = ret;
 	m_video = fmt_ctx->streams[m_videoIdx];
-	if (m_video->codecpar->codec_id != AV_CODEC_ID_H264 &&
-	    m_video->codecpar->codec_id != AV_CODEC_ID_H265 &&
-	    m_video->codecpar->codec_id != AV_CODEC_ID_AV1) {
+	if (!MsMediaSource::IsSupportedCodec(m_video->codecpar->codec_id)) {
 		MS_LOG_ERROR("not support codec:%d url:%s", m_video->codecpar->codec_id, m_url.c_str());
 		avformat_close_input(&fmt_ctx);
 		this->SourceActiveClose();

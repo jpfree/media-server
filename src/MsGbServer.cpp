@@ -1511,8 +1511,16 @@ void MsGbServer::InitInvite(MsMsg &msg) {
 
 	if (transport == EN_UDP) {
 		sdp += " RTP/AVP 96\r\na=rtpmap:96 PS/90000\r\na=recvonly\r\n";
+		if (type == 0) {
+			sdp += "a=streamprofile:" + to_string(p->streamNumber) + "\r\n";
+			sdp += "a=streamnumber:" + to_string(p->streamNumber) + "\r\n";
+		}
 	} else {
 		sdp += " TCP/RTP/AVP 96\r\na=rtpmap:96 PS/90000\r\n";
+		if (type == 0) {
+			sdp += "a=streamprofile:" + to_string(p->streamNumber) + "\r\n";
+			sdp += "a=streamnumber:" + to_string(p->streamNumber) + "\r\n";
+		}
 
 		if (transport == EN_TCP_ACTIVE) {
 			sdp += "a=setup:active\r\n";
