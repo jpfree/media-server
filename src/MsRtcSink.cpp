@@ -113,7 +113,7 @@ int MsRtcSink::CreateTracksAndAnswer() {
 				continue;
 			}
 
-			if ((rtpMap->format == "OPUS" || rtpMap->format == "opus") && m_audio && !_audioTrack) {
+			if (rtpMap->format == "opus" && m_audio && !_audioTrack) {
 				MS_LOG_INFO("whep:%s setup audio track, codec: %s, pt: %d", _sessionId.c_str(),
 				            rtpMap->format.c_str(), pt);
 				_audioPt = pt;
@@ -625,7 +625,8 @@ void MsRtcSink::TranscodeAAC(AVPacket *pkt, std::vector<AVPacket *> &opusPkts) {
 
 bool MsRtcSink::IsVideoMatch(const string &codec, AVCodecID codec_id) {
 	if ((codec == "H264" && codec_id == AV_CODEC_ID_H264) ||
-	    (codec == "H265" && codec_id == AV_CODEC_ID_H265)) {
+	    (codec == "H265" && codec_id == AV_CODEC_ID_H265) ||
+	    (codec == "AV1" && codec_id == AV_CODEC_ID_AV1)) {
 		return true;
 	}
 	return false;

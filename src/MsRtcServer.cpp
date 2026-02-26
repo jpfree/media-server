@@ -334,9 +334,10 @@ void MsRtcServer::WhipProcess(shared_ptr<SHttpTransferMsg> rtcMsg) {
 				    [peerConn](rtc::binary message) {
 					    if (peerConn) {
 						    auto rtp = reinterpret_cast<rtc::RtpHeader *>(message.data());
-						    if (rtp->payloadType() == peerConn->_videoPt ||
-						        rtp->payloadType() == peerConn->_audioPt) {
-							    peerConn->WriteBuffer(message.data(), message.size());
+						    if (rtp->payloadType() == peerConn->_videoPt) {
+							    peerConn->WriteBuffer(message.data(), message.size(), true);
+						    } else if (rtp->payloadType() == peerConn->_audioPt) {
+							    peerConn->WriteBuffer(message.data(), message.size(), false);
 						    }
 					    }
 				    },
@@ -567,5 +568,5 @@ void MsRtcServer::WhepProcess(shared_ptr<SHttpTransferMsg> rtcMsg) {
 }
 
 bool MsRtcServer::IsSupportedCodec(const string &codec) {
-	return (codec == "OPUS" || codec == "opus" || codec == "H264" || codec == "H265");
+	return (codec == "opus" || codec == "H264" || codec == "H265" || codec == "AV1");
 }

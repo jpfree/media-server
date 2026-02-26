@@ -16,10 +16,11 @@ struct MsRtcSource : public MsMediaSource, public enable_shared_from_this<MsRtcS
 	void OnSinksEmpty() override {}
 	shared_ptr<MsMediaSource> GetSharedPtr() override { return shared_from_this(); }
 
-	void GenerateSdp();
+	string GenVideoSdp();
+	string GenAudioSdp();
 	void StartRtpDemux();
-	void WriteBuffer(const void *buf, int size);
-	int ReadBuffer(uint8_t *buf, int buf_size);
+	void WriteBuffer(const void *buf, int size, bool isVideo);
+	int ReadBuffer(uint8_t *buf, int buf_size, bool isVideo);
 
 	shared_ptr<rtc::PeerConnection> _pc;
 	shared_ptr<rtc::Track> _videoTrack;
@@ -36,10 +37,17 @@ struct MsRtcSource : public MsMediaSource, public enable_shared_from_this<MsRtcS
 	string _sdp;
 	vector<string> _videoFmts;
 	vector<string> _audioFmts;
-	std::queue<SData> m_rtcDataQue;
-	std::queue<SData> m_recyleQue;
-	std::mutex m_queMtx;
-	std::condition_variable m_condVar;
+
+	std::queue<SData> m_videoRtpQue;
+	std::queue<SData> m_videoPool;
+	std::mutex m_videoQueMtx;
+	std::condition_variable m_videoCondVar;
+
+	std::queue<SData> m_audioRtpQue;
+	std::queue<SData> m_audioPool;
+	std::mutex m_audioQueMtx;
+	std::condition_variable m_audioCondVar;
+
 	std::unique_ptr<std::thread> m_rtpThread;
 };
 
