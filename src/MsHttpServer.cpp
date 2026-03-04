@@ -1171,8 +1171,16 @@ void MsHttpServer::GetRegistDomain(shared_ptr<MsEvent> evt, MsHttpMsg &msg, char
 	this->PostMsg(qr);
 
 	thread([evt, fut = std::move(fut)]() mutable {
-		string rsp = fut.get();
-		SendHttpRsp(evt->GetSocket(), rsp);
+		try {
+			string rsp = fut.get();
+			SendHttpRsp(evt->GetSocket(), rsp);
+		} catch (std::exception &e) {
+			MS_LOG_WARN("get regist domain error:%s", e.what());
+			json rsp;
+			rsp["code"] = 1;
+			rsp["msg"] = "error";
+			SendHttpRsp(evt->GetSocket(), rsp.dump());
+		}
 	}).detach();
 }
 
