@@ -19,16 +19,16 @@ public:
 
 public:
 	enum {
-		STAGE_S1,
-		STAGE_S2,
-		STAGE_S3,
-		STAGE_S4,
+		STAGE_PROBE,
+		STAGE_GET_SERVICES,
+		STAGE_GET_PROFILES,
+		STAGE_GET_STREAM_URI,
 	};
 
-	void proc_s1(shared_ptr<MsEvent> evt);
-	void proc_s2(shared_ptr<MsEvent> evt);
-	void proc_s3(shared_ptr<MsEvent> evt);
-	void proc_s4(shared_ptr<MsEvent> evt);
+	void proc_probe(shared_ptr<MsEvent> evt);
+	void proc_get_services(shared_ptr<MsEvent> evt);
+	void proc_get_profiles(shared_ptr<MsEvent> evt);
+	void proc_get_stream_uri(shared_ptr<MsEvent> evt);
 
 	void clear_evt(shared_ptr<MsEvent> evt);
 	static int parse_uri(string &url, string &ip, int &port, string &uri);

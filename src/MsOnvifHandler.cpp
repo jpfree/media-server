@@ -5,19 +5,306 @@
 #include "MsMsgDef.h"
 #include "MsSha1.h"
 #include "MsSocket.h"
-
+#include "tinyxml2/tinyxml2.h"
 #include <string.h>
 #include <thread>
 
+// Helper: recursively find elements by local name (ignores namespace prefix)
+std::vector<tinyxml2::XMLElement *> FindElementsByLocalName(tinyxml2::XMLElement *root,
+                                                            const std::string &localName) {
+	std::vector<tinyxml2::XMLElement *> results;
+	if (!root)
+		return results;
+
+	// XMLElement::Name() returns "prefix:LocalName" or just "LocalName"
+	const char *name = root->Name();
+	std::string fullName(name ? name : "");
+	std::string elementLocal;
+
+	auto colonPos = fullName.find(':');
+	if (colonPos != std::string::npos)
+		elementLocal = fullName.substr(colonPos + 1);
+	else
+		elementLocal = fullName;
+
+	if (elementLocal == localName)
+		results.push_back(root);
+
+	for (auto *child = root->FirstChildElement(); child; child = child->NextSiblingElement()) {
+		auto sub = FindElementsByLocalName(child, localName);
+		results.insert(results.end(), sub.begin(), sub.end());
+	}
+	return results;
+}
+
+// Helper: find first element by local name (ignores namespace prefix), depth-first
+tinyxml2::XMLElement *FindFirstByLocalName(tinyxml2::XMLElement *root,
+                                           const std::string &localName) {
+	if (!root)
+		return nullptr;
+
+	const char *name = root->Name();
+	std::string fullName(name ? name : "");
+	std::string elementLocal;
+	auto colonPos = fullName.find(':');
+	elementLocal = (colonPos != std::string::npos) ? fullName.substr(colonPos + 1) : fullName;
+
+	if (elementLocal == localName)
+		return root;
+
+	for (auto *child = root->FirstChildElement(); child; child = child->NextSiblingElement()) {
+		auto *found = FindFirstByLocalName(child, localName);
+		if (found)
+			return found;
+	}
+	return nullptr;
+}
+
+struct ServiceInfo {
+	std::string namespace_; // e.g. "http://www.onvif.org/ver10/media/wsdl"
+	std::string xaddr;      // e.g. "http://192.168.1.100/onvif/media"
+	std::string version;    // e.g. "2.60"
+};
+
+struct OnvifServices {
+	ServiceInfo media;  // Media service (ver10 or ver20)
+	ServiceInfo media2; // Media2 service (ver20), if present
+	ServiceInfo ptz;    // PTZ service
+};
+
+// Known namespace substrings to identify services
+static bool IsMediaNamespace(const std::string &ns) {
+	// ver10/media/wsdl  OR  ver20/media/wsdl
+	return ns.find("/media/wsdl") != std::string::npos ||
+	       ns.find("ver10/media") != std::string::npos;
+}
+
+static bool IsMedia2Namespace(const std::string &ns) {
+	return ns.find("ver20/media/wsdl") != std::string::npos;
+}
+
+static bool IsPTZNamespace(const std::string &ns) {
+	return ns.find("/ptz/wsdl") != std::string::npos || ns.find("ver20/ptz") != std::string::npos;
+}
+
+OnvifServices ParseGetServicesResponse(const char *xmlResponse) {
+	OnvifServices services;
+
+	tinyxml2::XMLDocument doc;
+	tinyxml2::XMLError err = doc.Parse(xmlResponse);
+	if (err != tinyxml2::XML_SUCCESS) {
+		MS_LOG_ERROR("XML parse error: %s", doc.ErrorStr());
+		return services;
+	}
+
+	tinyxml2::XMLElement *root = doc.RootElement();
+	if (!root) {
+		MS_LOG_ERROR("Empty XML document");
+		return services;
+	}
+
+	// Each <Service> block describes one ONVIF service
+	auto serviceElems = FindElementsByLocalName(root, "Service");
+
+	for (auto *serviceElem : serviceElems) {
+		// <Namespace> — identifies which service this is
+		auto *nsElem = FindFirstByLocalName(serviceElem, "Namespace");
+		if (!nsElem || !nsElem->GetText())
+			continue;
+		std::string ns(nsElem->GetText());
+
+		// <XAddr> — the endpoint URL
+		auto *xaddrElem = FindFirstByLocalName(serviceElem, "XAddr");
+		std::string xaddr = (xaddrElem && xaddrElem->GetText()) ? xaddrElem->GetText() : "";
+
+		// <Version> — optional, grab Major.Minor
+		std::string version;
+		auto *versionElem = FindFirstByLocalName(serviceElem, "Version");
+		if (versionElem) {
+			auto *major = FindFirstByLocalName(versionElem, "Major");
+			auto *minor = FindFirstByLocalName(versionElem, "Minor");
+			if (major && major->GetText() && minor && minor->GetText())
+				version = std::string(major->GetText()) + "." + minor->GetText();
+		}
+
+		ServiceInfo info{ns, xaddr, version};
+
+		if (IsMedia2Namespace(ns))
+			services.media2 = info;
+		else if (IsMediaNamespace(ns))
+			services.media = info;
+		else if (IsPTZNamespace(ns))
+			services.ptz = info;
+	}
+
+	return services;
+}
+
+std::vector<std::string> ParseXAddrs(const char *xmlResponse) {
+	std::vector<std::string> xaddrsList;
+
+	tinyxml2::XMLDocument doc;
+	tinyxml2::XMLError err = doc.Parse(xmlResponse);
+	if (err != tinyxml2::XML_SUCCESS) {
+		MS_LOG_ERROR("Failed to parse XML: %s", doc.ErrorStr());
+		return xaddrsList;
+	}
+
+	tinyxml2::XMLElement *root = doc.RootElement();
+	if (!root) {
+		MS_LOG_ERROR("Empty XML document");
+		return xaddrsList;
+	}
+
+	// Find all <ProbeMatch> elements
+	auto probeMatches = FindElementsByLocalName(root, "ProbeMatch");
+
+	for (auto *probeMatch : probeMatches) {
+		// Find <XAddrs> inside this <ProbeMatch>
+		auto xaddrsElems = FindElementsByLocalName(probeMatch, "XAddrs");
+		for (auto *xaddrsElem : xaddrsElems) {
+			const char *text = xaddrsElem->GetText();
+			if (text) {
+				// XAddrs may contain multiple space-separated URLs
+				std::string xaddrs(text);
+				std::istringstream iss(xaddrs);
+				std::string url;
+				while (iss >> url) {
+					xaddrsList.push_back(url);
+				}
+			}
+		}
+	}
+
+	return xaddrsList;
+}
+
+std::string ParseFirstProfileToken(const char *xmlResponse) {
+	tinyxml2::XMLDocument doc;
+	tinyxml2::XMLError err = doc.Parse(xmlResponse);
+	if (err != tinyxml2::XML_SUCCESS) {
+		MS_LOG_ERROR("XML parse error: %s", doc.ErrorStr());
+		return "";
+	}
+
+	tinyxml2::XMLElement *root = doc.RootElement();
+	if (!root) {
+		MS_LOG_ERROR("Empty XML document");
+		return "";
+	}
+
+	// Find the first <Profiles> element — the token is an XML attribute
+	tinyxml2::XMLElement *profilesElem = FindFirstByLocalName(root, "Profiles");
+	if (!profilesElem) {
+		MS_LOG_ERROR("No <Profiles> element found");
+		return "";
+	}
+
+	// token is an XML attribute on <Profiles token="...">
+	const char *token = profilesElem->Attribute("token");
+	if (!token) {
+		MS_LOG_ERROR("<Profiles> element has no 'token' attribute");
+		return "";
+	}
+
+	return std::string(token);
+}
+
+std::string ParseStreamUri(const char *xmlResponse) {
+	tinyxml2::XMLDocument doc;
+	tinyxml2::XMLError err = doc.Parse(xmlResponse);
+	if (err != tinyxml2::XML_SUCCESS) {
+		MS_LOG_ERROR("XML parse error: %s", doc.ErrorStr());
+		return "";
+	}
+
+	tinyxml2::XMLElement *root = doc.RootElement();
+	if (!root) {
+		MS_LOG_ERROR("Empty XML document");
+		return "";
+	}
+
+	// Structure: <GetStreamUriResponse> -> <MediaUri> -> <Uri>
+	tinyxml2::XMLElement *mediaUriElem = FindFirstByLocalName(root, "MediaUri");
+	if (!mediaUriElem) {
+		MS_LOG_ERROR("No <MediaUri> element found");
+		return "";
+	}
+
+	tinyxml2::XMLElement *uriElem = FindFirstByLocalName(mediaUriElem, "Uri");
+	if (!uriElem || !uriElem->GetText()) {
+		MS_LOG_ERROR("No <Uri> element found inside <MediaUri>");
+		return "";
+	}
+
+	return std::string(uriElem->GetText());
+}
+
+struct PresetInfo {
+	std::string token; // attribute: <Preset token="...">
+	std::string name;  // child element: <Name>...</Name>
+};
+
+std::vector<PresetInfo> ParsePresetTokens(const char *xmlResponse) {
+	std::vector<PresetInfo> presets;
+
+	tinyxml2::XMLDocument doc;
+	tinyxml2::XMLError err = doc.Parse(xmlResponse);
+	if (err != tinyxml2::XML_SUCCESS) {
+		MS_LOG_ERROR("XML parse error: %s", doc.ErrorStr());
+		return presets;
+	}
+
+	tinyxml2::XMLElement *root = doc.RootElement();
+	if (!root) {
+		MS_LOG_ERROR("Empty XML document");
+		return presets;
+	}
+
+	// Each <Preset token="..."> is a sibling under <GetPresetsResponse>
+	auto presetElems = FindElementsByLocalName(root, "Preset");
+	if (presetElems.empty()) {
+		MS_LOG_ERROR("No <Preset> elements found");
+		return presets;
+	}
+
+	for (auto *presetElem : presetElems) {
+		// token is an XML attribute on <Preset token="...">
+		const char *token = presetElem->Attribute("token");
+		if (!token)
+			continue; // skip malformed entries
+
+		// <Name> is an optional child element
+		std::string name;
+		auto *nameElem = presetElem->FirstChildElement();
+		while (nameElem) {
+			const char *elemName = nameElem->Name();
+			std::string fullName(elemName ? elemName : "");
+			auto colonPos = fullName.find(':');
+			std::string localName =
+			    (colonPos != std::string::npos) ? fullName.substr(colonPos + 1) : fullName;
+			if (localName == "Name" && nameElem->GetText()) {
+				name = nameElem->GetText();
+				break;
+			}
+			nameElem = nameElem->NextSiblingElement();
+		}
+
+		presets.push_back({std::string(token), name});
+	}
+
+	return presets;
+}
+
 MsOnvifHandler::MsOnvifHandler(shared_ptr<MsReactor> r, shared_ptr<MsGbDevice> dev, int sid)
-    : m_reactor(r), m_nrecv(0), m_stage(STAGE_S1), m_dev(dev), m_sid(sid) {
+    : m_reactor(r), m_nrecv(0), m_stage(STAGE_PROBE), m_dev(dev), m_sid(sid) {
 	m_bufPtr = make_unique<char[]>(DEF_BUF_SIZE);
 }
 
 MsOnvifHandler::~MsOnvifHandler() { MS_LOG_DEBUG("~MsOnvifHandler"); }
 
 void MsOnvifHandler::HandleRead(shared_ptr<MsEvent> evt) {
-	MS_LOG_INFO("handle read");
+	// MS_LOG_INFO("handle read");
 
 	MsSocket *sock = evt->GetSocket();
 	int ret = sock->Recv(m_bufPtr.get() + m_nrecv, DEF_BUF_SIZE - m_nrecv);
@@ -30,7 +317,7 @@ void MsOnvifHandler::HandleRead(shared_ptr<MsEvent> evt) {
 	m_nrecv += ret;
 	m_bufPtr[m_nrecv] = '\0';
 
-	MS_LOG_INFO("%s", m_bufPtr.get());
+	// MS_LOG_INFO("%s", m_bufPtr.get());
 
 	char *p = strstr(m_bufPtr.get(), "Envelope>");
 	if (!p) // not full msg recved
@@ -38,21 +325,31 @@ void MsOnvifHandler::HandleRead(shared_ptr<MsEvent> evt) {
 		return;
 	}
 
+	MS_LOG_INFO("%s", m_bufPtr.get());
+	// find the start of XML and move it to the beginning of buffer
+	char *xmlStart = strstr(m_bufPtr.get(), "<?xml");
+	if (xmlStart && xmlStart != m_bufPtr.get()) {
+		size_t xmlLen = m_nrecv - (xmlStart - m_bufPtr.get());
+		memmove(m_bufPtr.get(), xmlStart, xmlLen);
+		m_nrecv = xmlLen;
+		m_bufPtr[m_nrecv] = '\0';
+	}
+
 	switch (m_stage) {
-	case STAGE_S1:
-		this->proc_s1(evt);
+	case STAGE_PROBE:
+		this->proc_probe(evt);
 		break;
 
-	case STAGE_S2:
-		this->proc_s2(evt);
+	case STAGE_GET_SERVICES:
+		this->proc_get_services(evt);
 		break;
 
-	case STAGE_S3:
-		this->proc_s3(evt);
+	case STAGE_GET_PROFILES:
+		this->proc_get_profiles(evt);
 		break;
 
-	case STAGE_S4:
-		this->proc_s4(evt);
+	case STAGE_GET_STREAM_URI:
+		this->proc_get_stream_uri(evt);
 		break;
 
 	default:
@@ -375,27 +672,21 @@ void MsOnvifHandler::QueryPreset(string user, string passwd, string url, string 
 		char *p = strstr(bufPtr.get(), "Envelope>");
 		if (p) {
 			MS_LOG_DEBUG("presets:%s", bufPtr.get());
-			char *pbuf = bufPtr.get();
+			// find the start of XML and move it to the beginning of buffer
+			char *xmlStart = strstr(bufPtr.get(), "<?xml");
+			if (xmlStart && xmlStart != bufPtr.get()) {
+				size_t xmlLen = nrecv - (xmlStart - bufPtr.get());
+				memmove(bufPtr.get(), xmlStart, xmlLen);
+				nrecv = xmlLen;
+				bufPtr[nrecv] = '\0';
+			}
 
-			while (true) {
-				p = strstr(pbuf, "Preset token=\"");
-				if (!p) {
-					break;
-				}
-
-				p += strlen("Preset token=\"");
-				char *p1 = p;
-
-				while (*p != '"')
-					++p;
-
+			auto presets = ParsePresetTokens(bufPtr.get());
+			for (const auto &preset : presets) {
 				json j;
-				string presetToken(p1, p - p1);
-
-				j["presetID"] = presetToken;
+				j["presetID"] = preset.token;
+				j["name"] = preset.name;
 				rsp["result"].emplace_back(j);
-
-				pbuf = p + 1;
 			}
 
 			break;
@@ -405,20 +696,16 @@ void MsOnvifHandler::QueryPreset(string user, string passwd, string url, string 
 	prom->set_value(rsp.dump());
 }
 
-void MsOnvifHandler::proc_s1(shared_ptr<MsEvent> evt) {
-	char *p = strstr(m_bufPtr.get(), "XAddrs>");
-	if (!p) {
+void MsOnvifHandler::proc_probe(shared_ptr<MsEvent> evt) {
+	auto xaddrsList = ParseXAddrs(m_bufPtr.get());
+
+	if (xaddrsList.empty()) {
 		MS_LOG_ERROR("buf err:%s", m_bufPtr.get());
 		this->clear_evt(evt);
 		return;
 	}
 
-	p += strlen("XAddrs>");
-	char *p1 = p;
-	while (*p != ' ' && *p != '<')
-		++p;
-
-	string devurl(p1, p - p1);
+	string devurl = xaddrsList[0];
 	MS_LOG_DEBUG("device url:%s", devurl.c_str());
 
 	string ip, uri;
@@ -484,7 +771,7 @@ void MsOnvifHandler::proc_s1(shared_ptr<MsEvent> evt) {
 		return;
 	}
 
-	printf("%s\n", strReq.c_str());
+	MS_LOG_DEBUG("%s", strReq.c_str());
 
 	shared_ptr<MsEvent> nevt =
 	    make_shared<MsEvent>(tcp_sock, MS_FD_READ | MS_FD_CLOSE, shared_from_this());
@@ -492,52 +779,24 @@ void MsOnvifHandler::proc_s1(shared_ptr<MsEvent> evt) {
 	m_reactor->AddEvent(nevt);
 	m_reactor->DelEvent(m_evt);
 	m_evt = nevt;
-	m_stage = STAGE_S2;
+	m_stage = STAGE_GET_SERVICES;
 	m_nrecv = 0;
 }
 
-void MsOnvifHandler::proc_s2(shared_ptr<MsEvent> evt) {
-	char *p = strstr(m_bufPtr.get(), "Namespace>http://www.onvif.org/ver10/media/wsdl");
-	if (!p) {
-		MS_LOG_ERROR("buf err:%s", m_bufPtr.get());
+void MsOnvifHandler::proc_get_services(shared_ptr<MsEvent> evt) {
+
+	auto services = ParseGetServicesResponse(m_bufPtr.get());
+	if (services.media.xaddr.empty() && services.media2.xaddr.empty()) {
+		MS_LOG_ERROR("media service not found:%s", m_bufPtr.get());
 		this->clear_evt(evt);
 		return;
 	}
 
-	p += strlen("Namespace>http://www.onvif.org/ver10/media/wsdl");
-	p = strstr(p, "XAddr>");
-	if (!p) {
-		MS_LOG_ERROR("buf err:%s", m_bufPtr.get());
-		this->clear_evt(evt);
-		return;
-	}
-
-	p += strlen("XAddr>");
-	char *p1 = p;
-	while (*p != ' ' && *p != '<')
-		++p;
-
-	m_mediaurl.assign(p1, p - p1);
+	m_mediaurl = services.media.xaddr.empty() ? services.media2.xaddr : services.media.xaddr;
 	MS_LOG_DEBUG("media url:%s", m_mediaurl.c_str());
 
-	p = strstr(m_bufPtr.get(), "Namespace>http://www.onvif.org/ver20/ptz/wsdl");
-	if (!p) {
-		MS_LOG_ERROR("buf no ptz:%s", m_bufPtr.get());
-	} else {
-		p += strlen("Namespace>http://www.onvif.org/ver20/ptz/wsdl");
-		p = strstr(p, "XAddr>");
-		if (!p) {
-			MS_LOG_ERROR("buf err:%s", m_bufPtr.get());
-			this->clear_evt(evt);
-			return;
-		}
-
-		p += strlen("XAddr>");
-		p1 = p;
-		while (*p != ' ' && *p != '<')
-			++p;
-
-		m_ptzurl.assign(p1, p - p1);
+	if (!services.ptz.xaddr.empty()) {
+		m_ptzurl = services.ptz.xaddr;
 		MS_LOG_DEBUG("ptz url:%s", m_ptzurl.c_str());
 	}
 
@@ -604,25 +863,19 @@ void MsOnvifHandler::proc_s2(shared_ptr<MsEvent> evt) {
 	m_reactor->AddEvent(nevt);
 	m_reactor->DelEvent(m_evt);
 	m_evt = nevt;
-	m_stage = STAGE_S3;
+	m_stage = STAGE_GET_PROFILES;
 	m_nrecv = 0;
 }
 
-void MsOnvifHandler::proc_s3(shared_ptr<MsEvent> evt) {
-	char *p = strstr(m_bufPtr.get(), "Profiles token=\"");
-	if (!p) {
-		MS_LOG_ERROR("buf err:%s", m_bufPtr.get());
+void MsOnvifHandler::proc_get_profiles(shared_ptr<MsEvent> evt) {
+	auto token = ParseFirstProfileToken(m_bufPtr.get());
+	if (token.empty()) {
+		MS_LOG_ERROR("profiles not found:%s", m_bufPtr.get());
 		this->clear_evt(evt);
 		return;
 	}
 
-	p += strlen("Profiles token=\"");
-	char *p1 = p;
-
-	while (*p != '"')
-		++p;
-
-	m_profile.assign(p1, p - p1);
+	m_profile = token;
 
 	MS_LOG_DEBUG("profile:%s", m_profile.c_str());
 
@@ -693,25 +946,19 @@ void MsOnvifHandler::proc_s3(shared_ptr<MsEvent> evt) {
 	m_reactor->AddEvent(nevt);
 	m_reactor->DelEvent(m_evt);
 	m_evt = nevt;
-	m_stage = STAGE_S4;
+	m_stage = STAGE_GET_STREAM_URI;
 	m_nrecv = 0;
 }
 
-void MsOnvifHandler::proc_s4(shared_ptr<MsEvent> evt) {
-	char *p = strstr(m_bufPtr.get(), ":Uri>");
-	if (!p) {
-		MS_LOG_ERROR("buf err:%s", m_bufPtr.get());
+void MsOnvifHandler::proc_get_stream_uri(shared_ptr<MsEvent> evt) {
+	auto rtsp = ParseStreamUri(m_bufPtr.get());
+	if (rtsp.empty()) {
+		MS_LOG_ERROR("rtsp url not found:%s", m_bufPtr.get());
 		this->clear_evt(evt);
 		return;
 	}
 
-	p += strlen(":Uri>");
-	char *p1 = p;
-
-	while (*p != '<')
-		++p;
-
-	m_rtsp.assign(p1, p - p1);
+	m_rtsp = rtsp;
 
 	MS_LOG_DEBUG("rtsp url:%s", m_rtsp.c_str());
 
