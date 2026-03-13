@@ -25,7 +25,9 @@ RUN git clone -b master --depth 1 https://github.com/paullouisageneau/libdatacha
     git submodule update --init --recursive && \
     cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DNO_EXAMPLES=ON -DNO_TESTS=ON && \
     cmake --build build -j$(nproc) && \
-    cmake --install build
+    cmake --install build && \
+    mkdir -p /opt/libdatachannel && \
+    find /usr -name "libdatachannel.so*" -exec cp -P {} /opt/libdatachannel/ \;
 
 # Build Media Server
 WORKDIR /app
@@ -51,8 +53,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy LibDataChannel libraries from builder
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libdatachannel* /usr/lib/x86_64-linux-gnu/
+# Copy LibDataChannel libraries from builder (arch-neutral staging path)
+COPY --from=builder /opt/libdatachannel/ /usr/local/lib/
+RUN ldconfig
 
 # Copy application artifacts
 WORKDIR /app
