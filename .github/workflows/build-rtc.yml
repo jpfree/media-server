@@ -1,11 +1,8 @@
 name: Build with WebRTC
 
 on:
-  push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
-
+  workflow_dispatch:   # ← 只允许手动运
+  
 env:
   BUILD_TYPE: Release
 
