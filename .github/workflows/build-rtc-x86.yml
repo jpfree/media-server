@@ -1,4 +1,4 @@
-name: Build with WebRTC x86
+name: Build with WebRTC
 
 on:
   push:
@@ -16,6 +16,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86]   # 未来要扩展其他架构就在这里加
+
     steps:
     - uses: actions/checkout@v4
 
@@ -32,13 +37,21 @@ jobs:
         cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DNO_EXAMPLES=ON -DNO_TESTS=ON
         cmake --build build -j$(nproc)
         sudo cmake --install build
-        
+
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DENABLE_RTC=ON -DENABLE_HTTPS=ON
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
-    - name: Verify Build
+    - name: Prepare artifact
       run: |
-        ls -la output/media_server
+        mkdir -p output
+        cp ${{github.workspace}}/build/media_server output/media_server-${{ matrix.arch }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: media_server-${{ matrix.arch }}
+        path: output/
+        if-no-files-found: error
