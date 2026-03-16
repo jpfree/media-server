@@ -1,4 +1,4 @@
-name: Build with WebRTC
+name: Build with WebRTC x86
 
 on:
   push:
