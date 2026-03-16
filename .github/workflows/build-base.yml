@@ -1,10 +1,7 @@
 name: Build Base
 
 on:
-  push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
+  workflow_dispatch:   # ← 只允许手动运
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
