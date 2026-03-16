@@ -20,14 +20,42 @@ include_directories(${CMAKE_SOURCE_DIR}/src)
 include_directories(${CMAKE_SOURCE_DIR}/src/base)
 
 # External dependencies
-find_package(PkgConfig REQUIRED)
-find_package(Threads REQUIRED)   # ★★ 必须添加：LibDataChannel 静态库依赖 Threads::Threads
+find_package(Threads REQUIRED)
 
-pkg_search_module(AVCODEC REQUIRED IMPORTED_TARGET libavcodec)
-pkg_search_module(AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
-pkg_search_module(AVUTIL REQUIRED IMPORTED_TARGET libavutil)
-pkg_search_module(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
-pkg_search_module(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
+# ---- FFmpeg (static) ----
+# 假设 FFmpeg 静态库和头文件安装在 /usr/local
+find_path(FFMPEG_INCLUDE_DIR libavcodec/avcodec.h
+    PATHS /usr/local/include /usr/include
+)
+
+find_library(AVCODEC_LIBRARY avcodec
+    PATHS /usr/local/lib /usr/lib
+)
+find_library(AVFORMAT_LIBRARY avformat
+    PATHS /usr/local/lib /usr/lib
+)
+find_library(AVUTIL_LIBRARY avutil
+    PATHS /usr/local/lib /usr/lib
+)
+find_library(SWRESAMPLE_LIBRARY swresample
+    PATHS /usr/local/lib /usr/lib
+)
+
+if(NOT FFMPEG_INCLUDE_DIR OR NOT AVCODEC_LIBRARY OR NOT AVFORMAT_LIBRARY OR NOT AVUTIL_LIBRARY OR NOT SWRESAMPLE_LIBRARY)
+    message(FATAL_ERROR "FFmpeg libraries or headers not found")
+endif()
+
+# ---- SQLite3 (static) ----
+find_path(SQLITE3_INCLUDE_DIR sqlite3.h
+    PATHS /usr/local/include /usr/include
+)
+find_library(SQLITE3_LIBRARY sqlite3
+    PATHS /usr/local/lib /usr/lib
+)
+
+if(NOT SQLITE3_INCLUDE_DIR OR NOT SQLITE3_LIBRARY)
+    message(FATAL_ERROR "SQLite3 library or headers not found")
+endif()
 
 # Add source files from src directory
 set(MAIN_SOURCES
@@ -93,15 +121,20 @@ endif()
 # Create executable
 add_executable(media_server ${MAIN_SOURCES} ${BASE_SOURCES})
 
-# Link libraries
-target_link_libraries(media_server PRIVATE pthread)
+# Include dirs
+target_include_directories(media_server PRIVATE
+    ${FFMPEG_INCLUDE_DIR}
+    ${SQLITE3_INCLUDE_DIR}
+)
 
+# Base libs
 target_link_libraries(media_server PRIVATE
-    PkgConfig::AVCODEC
-    PkgConfig::AVFORMAT
-    PkgConfig::AVUTIL
-    PkgConfig::SWRESAMPLE
-    PkgConfig::SQLITE3
+    Threads::Threads
+    ${AVCODEC_LIBRARY}
+    ${AVFORMAT_LIBRARY}
+    ${AVUTIL_LIBRARY}
+    ${SWRESAMPLE_LIBRARY}
+    ${SQLITE3_LIBRARY}
 )
 
 if(ENABLE_HTTPS)
@@ -115,6 +148,5 @@ if(ENABLE_RTC)
     target_compile_definitions(media_server PRIVATE ENABLE_RTC=1)
     target_link_libraries(media_server PRIVATE
         LibDataChannel::LibDataChannel
-        Threads::Threads        # ★★ 必须添加：修复 CMake 报错
     )
 endif()
