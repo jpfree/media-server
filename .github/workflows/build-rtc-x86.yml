@@ -63,11 +63,12 @@ jobs:
           --disable-doc \
           --enable-pic \
           --enable-gpl \
+          --enable-version3 \
+          --enable-openssl \
           --enable-avcodec \
           --enable-avformat \
           --enable-avutil \
           --enable-swresample \
-          --enable-openssl \
           --extra-cflags="-I/usr/local/openssl/include" \
           --extra-ldflags="-L/usr/local/openssl/lib -static"
         make -j$(nproc)
@@ -93,7 +94,7 @@ jobs:
         sudo cmake --install build
 
     # -------------------------
-    # Configure & build media_server
+    # Build media_server
     # -------------------------
     - name: Configure CMake
       run: |
