@@ -1,63 +1,49 @@
 cmake_minimum_required(VERSION 3.10)
 project(media_server)
 
-# C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Set output directory for build binary
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../output)
 
-# Compiler flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_LINUX")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_LINUX -g -static")
 
-option(ENABLE_HTTPS "Enable https support" OFF)
-option(ENABLE_RTC "Enable webrtc support" OFF)
+option(ENABLE_HTTPS "Enable https support" ON)
+option(ENABLE_RTC "Enable webrtc support" ON)
 
-# Include directories
 include_directories(${CMAKE_SOURCE_DIR}/src)
 include_directories(${CMAKE_SOURCE_DIR}/src/base)
 
-# External dependencies
 find_package(Threads REQUIRED)
 
-# ---- FFmpeg (static) ----
-# 假设 FFmpeg 静态库和头文件安装在 /usr/local
+# -------------------------
+# OpenSSL (static)
+# -------------------------
+set(OPENSSL_ROOT_DIR "/usr/local/openssl")
+set(OPENSSL_USE_STATIC_LIBS TRUE)
+find_package(OpenSSL REQUIRED)
+
+# -------------------------
+# FFmpeg (static)
+# -------------------------
 find_path(FFMPEG_INCLUDE_DIR libavcodec/avcodec.h
     PATHS /usr/local/include /usr/include
 )
 
-find_library(AVCODEC_LIBRARY avcodec
-    PATHS /usr/local/lib /usr/lib
-)
-find_library(AVFORMAT_LIBRARY avformat
-    PATHS /usr/local/lib /usr/lib
-)
-find_library(AVUTIL_LIBRARY avutil
-    PATHS /usr/local/lib /usr/lib
-)
-find_library(SWRESAMPLE_LIBRARY swresample
-    PATHS /usr/local/lib /usr/lib
-)
+find_library(AVCODEC_LIBRARY avcodec PATHS /usr/local/lib)
+find_library(AVFORMAT_LIBRARY avformat PATHS /usr/local/lib)
+find_library(AVUTIL_LIBRARY avutil PATHS /usr/local/lib)
+find_library(SWRESAMPLE_LIBRARY swresample PATHS /usr/local/lib)
 
-if(NOT FFMPEG_INCLUDE_DIR OR NOT AVCODEC_LIBRARY OR NOT AVFORMAT_LIBRARY OR NOT AVUTIL_LIBRARY OR NOT SWRESAMPLE_LIBRARY)
-    message(FATAL_ERROR "FFmpeg libraries or headers not found")
-endif()
+# -------------------------
+# SQLite3 (static)
+# -------------------------
+find_path(SQLITE3_INCLUDE_DIR sqlite3.h PATHS /usr/local/include)
+find_library(SQLITE3_LIBRARY sqlite3 PATHS /usr/local/lib)
 
-# ---- SQLite3 (static) ----
-find_path(SQLITE3_INCLUDE_DIR sqlite3.h
-    PATHS /usr/local/include /usr/include
-)
-find_library(SQLITE3_LIBRARY sqlite3
-    PATHS /usr/local/lib /usr/lib
-)
-
-if(NOT SQLITE3_INCLUDE_DIR OR NOT SQLITE3_LIBRARY)
-    message(FATAL_ERROR "SQLite3 library or headers not found")
-endif()
-
-# Add source files from src directory
+# -------------------------
+# Sources
+# -------------------------
 set(MAIN_SOURCES
     src/MediaServer.cpp
     src/MsDbMgr.cpp
@@ -87,7 +73,6 @@ set(MAIN_SOURCES
     src/tinyxml2/tinyxml2.cpp
 )
 
-# Add source files from src/base directory
 set(BASE_SOURCES
     src/base/MsApp.cpp
     src/base/MsCommon.cpp
@@ -118,16 +103,14 @@ if(ENABLE_HTTPS)
     list(APPEND BASE_SOURCES src/base/MsSslSock.cpp)
 endif()
 
-# Create executable
 add_executable(media_server ${MAIN_SOURCES} ${BASE_SOURCES})
 
-# Include dirs
 target_include_directories(media_server PRIVATE
     ${FFMPEG_INCLUDE_DIR}
     ${SQLITE3_INCLUDE_DIR}
+    ${OPENSSL_INCLUDE_DIR}
 )
 
-# Base libs
 target_link_libraries(media_server PRIVATE
     Threads::Threads
     ${AVCODEC_LIBRARY}
@@ -138,15 +121,10 @@ target_link_libraries(media_server PRIVATE
 )
 
 if(ENABLE_HTTPS)
-    find_package(OpenSSL REQUIRED)
-    target_compile_definitions(media_server PRIVATE ENABLE_HTTPS=1)
     target_link_libraries(media_server PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
 if(ENABLE_RTC)
     find_package(LibDataChannel REQUIRED)
-    target_compile_definitions(media_server PRIVATE ENABLE_RTC=1)
-    target_link_libraries(media_server PRIVATE
-        LibDataChannel::LibDataChannel
-    )
+    target_link_libraries(media_server PRIVATE LibDataChannel::LibDataChannel)
 endif()
