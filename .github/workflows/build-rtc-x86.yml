@@ -1,4 +1,4 @@
-name: Build with WebRTC (Static FFmpeg/SQLite/RTC)
+name: Build Full Static media_server
 
 on:
   workflow_dispatch:
@@ -7,30 +7,36 @@ env:
   BUILD_TYPE: Release
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-permissions:
-  contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x86]
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
     - name: Install build tools
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          build-essential pkg-config yasm nasm curl \
-          autoconf automake libtool
+          build-essential yasm nasm curl git cmake autoconf automake libtool pkg-config
 
-    - name: Build SQLite3 (static)
+    # -------------------------
+    # Build OpenSSL (static)
+    # -------------------------
+    - name: Build OpenSSL static
+      run: |
+        mkdir -p /tmp/openssl
+        cd /tmp/openssl
+        curl -O https://www.openssl.org/source/openssl-3.2.1.tar.gz
+        tar xf openssl-3.2.1.tar.gz --strip-components=1
+        ./Configure linux-x86_64 no-shared --prefix=/usr/local/openssl
+        make -j$(nproc)
+        sudo make install_sw
+
+    # -------------------------
+    # Build SQLite3 (static)
+    # -------------------------
+    - name: Build SQLite3 static
       run: |
         mkdir -p /tmp/sqlite
         cd /tmp/sqlite
@@ -40,63 +46,67 @@ jobs:
         make -j$(nproc)
         sudo make install
 
-    - name: Build FFmpeg (static)
+    # -------------------------
+    # Build FFmpeg (static)
+    # -------------------------
+    - name: Build FFmpeg static
       run: |
         mkdir -p /tmp/ffmpeg
         cd /tmp/ffmpeg
         git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git .
-        ./configure \
+        PKG_CONFIG_PATH=/usr/local/openssl/lib/pkgconfig ./configure \
           --prefix=/usr/local \
           --disable-shared \
           --enable-static \
           --disable-programs \
           --disable-doc \
+          --enable-pic \
           --enable-gpl \
           --enable-avcodec \
           --enable-avformat \
           --enable-avutil \
           --enable-swresample \
-          --disable-network \
-          --disable-debug \
-          --enable-pic
+          --enable-openssl \
+          --extra-cflags="-I/usr/local/openssl/include" \
+          --extra-ldflags="-L/usr/local/openssl/lib -static"
         make -j$(nproc)
         sudo make install
 
-    - name: Install LibDataChannel (static)
+    # -------------------------
+    # Build LibDataChannel (static)
+    # -------------------------
+    - name: Build LibDataChannel static
       run: |
         git clone -b master --depth 1 https://github.com/paullouisageneau/libdatachannel.git
         cd libdatachannel
         git submodule update --init --recursive
         cmake -B build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_INSTALL_PREFIX=/usr/local \
-              -DNO_EXAMPLES=ON \
-              -DNO_TESTS=ON \
-              -DUSE_SYSTEM_SRTP=OFF \
-              -DBUILD_SHARED_LIBS=OFF
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DNO_EXAMPLES=ON \
+          -DNO_TESTS=ON \
+          -DUSE_SYSTEM_SRTP=OFF \
+          -DBUILD_SHARED_LIBS=OFF \
+          -DOPENSSL_ROOT_DIR=/usr/local/openssl
         cmake --build build -j$(nproc)
         sudo cmake --install build
 
+    # -------------------------
+    # Build media_server
+    # -------------------------
     - name: Configure CMake
       run: |
-        cmake -B ${{ github.workspace }}/build \
-              -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-              -DENABLE_RTC=ON \
-              -DENABLE_HTTPS=OFF
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DENABLE_RTC=ON \
+          -DENABLE_HTTPS=ON \
+          -DOPENSSL_ROOT_DIR=/usr/local/openssl
 
     - name: Build
-      run: |
-        cmake --build ${{ github.workspace }}/build --config ${BUILD_TYPE}
-
-    - name: Prepare artifact
-      run: |
-        mkdir -p artifact
-        cp ${{ github.workspace }}/output/media_server \
-           artifact/media_server-${{ matrix.arch }}
+      run: cmake --build build --config Release
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: media_server-${{ matrix.arch }}
-        path: artifact/
-        if-no-files-found: error
+        name: media_server-static
+        path: output/media_server
