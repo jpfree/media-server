@@ -12,7 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
     - name: Install build tools
       run: |
@@ -27,8 +28,8 @@ jobs:
       run: |
         mkdir -p /tmp/openssl
         cd /tmp/openssl
-        curl -O https://www.openssl.org/source/openssl-3.2.1.tar.gz
-        tar xf openssl-3.2.1.tar.gz --strip-components=1
+        curl -L https://github.com/openssl/openssl/archive/refs/tags/openssl-3.2.1.tar.gz -o openssl.tar.gz
+        tar xf openssl.tar.gz --strip-components=1
         ./Configure linux-x86_64 no-shared --prefix=/usr/local/openssl
         make -j$(nproc)
         sudo make install_sw
@@ -92,21 +93,28 @@ jobs:
         sudo cmake --install build
 
     # -------------------------
-    # Build media_server
+    # Configure & build media_server
     # -------------------------
     - name: Configure CMake
       run: |
         cmake -B build \
-          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
           -DENABLE_RTC=ON \
           -DENABLE_HTTPS=ON \
           -DOPENSSL_ROOT_DIR=/usr/local/openssl
 
     - name: Build
-      run: cmake --build build --config Release
+      run: |
+        cmake --build build --config ${{ env.BUILD_TYPE }}
+
+    - name: Prepare artifact
+      run: |
+        mkdir -p artifact
+        cp output/media_server artifact/media_server-x86-static
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: media_server-static
-        path: output/media_server
+        name: media_server-x86-static
+        path: artifact/
+        if-no-files-found: error
