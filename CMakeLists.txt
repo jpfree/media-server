@@ -19,9 +19,9 @@ option(ENABLE_RTC "Enable webrtc support" OFF)
 include_directories(${CMAKE_SOURCE_DIR}/src)
 include_directories(${CMAKE_SOURCE_DIR}/src/base)
 
-# Optional: Find and include external libraries
-# Uncomment and adjust paths as needed based on your system setup
+# External dependencies
 find_package(PkgConfig REQUIRED)
+find_package(Threads REQUIRED)   # ★★ 必须添加：LibDataChannel 静态库依赖 Threads::Threads
 
 pkg_search_module(AVCODEC REQUIRED IMPORTED_TARGET libavcodec)
 pkg_search_module(AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
@@ -96,8 +96,6 @@ add_executable(media_server ${MAIN_SOURCES} ${BASE_SOURCES})
 # Link libraries
 target_link_libraries(media_server PRIVATE pthread)
 
-# Optional: Link FFmpeg libraries if available
-# Uncomment when FFmpeg is properly installed and configured
 target_link_libraries(media_server PRIVATE
     PkgConfig::AVCODEC
     PkgConfig::AVFORMAT
@@ -115,5 +113,8 @@ endif()
 if(ENABLE_RTC)
     find_package(LibDataChannel REQUIRED)
     target_compile_definitions(media_server PRIVATE ENABLE_RTC=1)
-    target_link_libraries(media_server PRIVATE LibDataChannel::LibDataChannel)
+    target_link_libraries(media_server PRIVATE
+        LibDataChannel::LibDataChannel
+        Threads::Threads        # ★★ 必须添加：修复 CMake 报错
+    )
 endif()
