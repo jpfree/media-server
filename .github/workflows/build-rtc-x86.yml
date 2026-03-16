@@ -5,6 +5,7 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
+  workflow_dispatch:   # ← 手动运行按钮回来了
 
 env:
   BUILD_TYPE: Release
