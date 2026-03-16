@@ -16,34 +16,25 @@ include_directories(${CMAKE_SOURCE_DIR}/src/base)
 
 find_package(Threads REQUIRED)
 
-# -------------------------
-# OpenSSL (static)
-# -------------------------
+# OpenSSL
 set(OPENSSL_ROOT_DIR "/usr/local/openssl")
 set(OPENSSL_USE_STATIC_LIBS TRUE)
 find_package(OpenSSL REQUIRED)
 
-# -------------------------
-# FFmpeg (static)
-# -------------------------
-find_path(FFMPEG_INCLUDE_DIR libavcodec/avcodec.h
-    PATHS /usr/local/include /usr/include
-)
-
+# FFmpeg
+find_path(FFMPEG_INCLUDE_DIR libavcodec/avcodec.h PATHS /usr/local/include)
 find_library(AVCODEC_LIBRARY avcodec PATHS /usr/local/lib)
 find_library(AVFORMAT_LIBRARY avformat PATHS /usr/local/lib)
 find_library(AVUTIL_LIBRARY avutil PATHS /usr/local/lib)
 find_library(SWRESAMPLE_LIBRARY swresample PATHS /usr/local/lib)
 
-# -------------------------
-# SQLite3 (static)
-# -------------------------
+# SQLite3
 find_path(SQLITE3_INCLUDE_DIR sqlite3.h PATHS /usr/local/include)
 find_library(SQLITE3_LIBRARY sqlite3 PATHS /usr/local/lib)
 
-# -------------------------
-# Sources
-# -------------------------
+# zlib ★ 必须加
+find_library(ZLIB_LIBRARY z PATHS /usr/local/lib)
+
 set(MAIN_SOURCES
     src/MediaServer.cpp
     src/MsDbMgr.cpp
@@ -118,6 +109,7 @@ target_link_libraries(media_server PRIVATE
     ${AVUTIL_LIBRARY}
     ${SWRESAMPLE_LIBRARY}
     ${SQLITE3_LIBRARY}
+    ${ZLIB_LIBRARY}        # ★ 必须加
 )
 
 if(ENABLE_HTTPS)
